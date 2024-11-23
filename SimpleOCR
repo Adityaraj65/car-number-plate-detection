@@ -1,0 +1,37 @@
+function recognizedText = SimpleOCR(plateImage)
+    try
+        % Step 1: Convert to grayscale (if needed)
+        if size(plateImage, 3) == 3
+            plateImage = rgb2gray(plateImage);
+        end
+        
+        % Step 2: Enhance the contrast of the image
+        plateImage = imadjust(plateImage);
+        
+        % Step 3: Convert to binary using Otsu's threshold
+        threshold = graythresh(plateImage);
+        bw = imbinarize(plateImage, threshold);
+        
+        % Step 4: Remove small objects and fill holes
+        bw = bwareaopen(bw, 50);
+        bw = imfill(bw, 'holes');
+        
+        % Step 5: Save the preprocessed image temporarily for Tesseract OCR
+        tempImagePath = fullfile(tempdir, 'temp_plate_image.png');
+        imwrite(bw, tempImagePath);
+        
+        % Step 6: Call Tesseract using a system command
+        [status, result] = system(['tesseract ', tempImagePath, ' stdout -c tessedit_char_whitelist=0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-']);
+        
+        % Step 7: Handle OCR results
+        if status == 0
+            recognizedText = strtrim(result);  % Remove any leading/trailing spaces
+        else
+            recognizedText = 'OCR failed';
+        end
+        
+    catch ME
+        % Handle any error in the OCR process
+        recognizedText = ['Error in OCR: ', ME.message];
+    end
+end
