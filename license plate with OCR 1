@@ -1,0 +1,95 @@
+clc;
+clear all;
+close all;
+
+try
+    % Step 1: Select the image file
+    [filename, pathname] = uigetfile({'*.jpg;*.png;*.bmp', 'Image Files (*.jpg,*.png,*.bmp)'});
+    if filename == 0
+        error('No file selected');
+    end
+    
+    % Step 2: Read the selected image
+    img = imread(fullfile(pathname, filename));
+    
+    % Display original image
+    figure('Name', 'License Plate Detection');
+    subplot(2,2,1);
+    imshow(img);
+    title('Original Image');
+    
+    % Step 3: Convert image to grayscale
+    if size(img, 3) == 3
+        gray = rgb2gray(img);
+    else
+        gray = img;
+    end
+    
+    % Step 4: Focus on the bottom half of the image (where the license plate is likely to be)
+    [rows, cols] = size(gray);
+    bottomHalf = gray(round(rows / 2):end, :);
+    
+    subplot(2,2,2);
+    imshow(bottomHalf);
+    title('Bottom Half of Image');
+    
+    % Step 5: Create binary image using adaptive thresholding
+    binary = imbinarize(bottomHalf, adaptthresh(bottomHalf, 0.5));
+    binary = imfill(binary, 'holes'); % Fill holes inside the detected regions
+    binary = bwareaopen(binary, 100); % Remove small objects/noise
+    binary = medfilt2(binary, [3, 3]); % Apply median filtering to reduce noise
+    
+    subplot(2,2,3);
+    imshow(binary);
+    title('Binary Image after Processing');
+    
+    % Step 6: Find connected components and filter regions based on properties
+    cc = bwconncomp(binary);
+    stats = regionprops(cc, 'BoundingBox', 'Area', 'Extent');
+    
+    % Filter regions based on aspect ratio, area, and extent
+    possiblePlates = [];
+    for i = 1:length(stats)
+        bbox = stats(i).BoundingBox;
+        area = stats(i).Area;
+        extent = stats(i).Extent;
+        
+        % Aspect ratio and area criteria for license plates
+        aspectRatio = bbox(3) / bbox(4);
+        if aspectRatio > 2 && aspectRatio < 5 && area > 2000 && extent > 0.4
+            possiblePlates = [possiblePlates; bbox];
+        end
+    end
+    
+    % If plates found, process the most likely one
+    if ~isempty(possiblePlates)
+        % Sort by size and take the largest
+        [~, idx] = max(possiblePlates(:, 3) .* possiblePlates(:, 4));
+        plate = possiblePlates(idx, :);
+        
+        % Step 7: Crop the number plate from the image
+        plateImg = imcrop(bottomHalf, plate);
+        
+        % Display the detected plate region
+        subplot(2,2,4);
+        imshow(plateImg);
+        title('Detected License Plate');
+        
+        % Step 8: Perform OCR on the detected license plate
+        recognizedText = SimpleOCR(plateImg);
+        
+        % Create a new figure for OCR result
+        figure('Name', 'OCR Result', 'Position', [100 100 300 100]);
+        text(0.1, 0.5, ['Plate Number: ' recognizedText], 'FontSize', 14);
+        axis off;
+        
+        % Display the detected license plate number in the command window
+        fprintf('Detected License Plate: %s\n', recognizedText);
+    else
+        subplot(2,2,4);
+        title('No plate detected');
+    end
+    
+catch err
+    errordlg(['Error: ' err.message]);
+end
