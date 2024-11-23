@@ -1,0 +1,108 @@
+% Basic License Plate Detection without Computer Vision Toolbox
+clc;
+clear all;
+close all;
+
+try
+    % Load image
+    [filename, pathname] = uigetfile({'*.jpg;*.png;*.bmp', 'Image Files (*.jpg,*.png,*.bmp)'});
+    if filename == 0
+        error('No file selected');
+    end
+    
+    % Read image
+    img = imread(fullfile(pathname, filename));
+    
+    % Display original image
+    figure('Name', 'License Plate Detection');
+    subplot(2,2,1);
+    imshow(img);
+    title('Original Image');
+    
+    % Convert to grayscale
+    if size(img,3) == 3
+        gray = rgb2gray(img);
+    else
+        gray = img;
+    end
+    
+    % Get image dimensions
+    [rows, cols] = size(gray);
+    
+    % Focus on bottom half of image
+    bottomHalf = gray(round(rows/2):end, :);
+    
+    subplot(2,2,2);
+    imshow(bottomHalf);
+    title('Bottom Half');
+    
+    % Create binary image using simple thresholding
+    level = graythresh(bottomHalf);
+    binary = im2bw(bottomHalf, level);
+    
+    % Basic noise removal using morphological operations
+    se = strel('square', 3);
+    binary = imopen(binary, se);
+    binary = imclose(binary, se);
+    
+    subplot(2,2,3);
+    imshow(binary);
+    title('Processed Image');
+    
+    % Find potential license plate regions
+    [labeledImage, numRegions] = bwlabel(binary);
+    regionMeasurements = regionprops(labeledImage, 'BoundingBox', 'Area');
+    
+    % Filter regions based on area and aspect ratio
+    possiblePlates = false(size(regionMeasurements));
+    for i = 1:numRegions
+        bbox = regionMeasurements(i).BoundingBox;
+        area = regionMeasurements(i).Area;
+        
+        % Calculate aspect ratio
+        aspectRatio = bbox(3) / bbox(4);
+        
+        % Filter based on aspect ratio and area
+        if aspectRatio > 2 && aspectRatio < 5 && area > 2000
+            possiblePlates(i) = true;
+        end
+    end
+    
+    % Find the most likely plate region
+    validRegions = regionMeasurements(possiblePlates);
+    
+    if ~isempty(validRegions)
+        % Get the largest valid region
+        [~, maxIdx] = max([validRegions.Area]);
+        plateBox = validRegions(maxIdx).BoundingBox;
+        
+        % Extract plate region
+        plateRegion = imcrop(bottomHalf, plateBox);
+        
+        % Display detected plate
+        subplot(2,2,4);
+        imshow(plateRegion);
+        title('Detected Plate');
+        
+        % Create enhanced binary version of plate for visualization
+        plateBW = im2bw(plateRegion, graythresh(plateRegion));
+        
+        % Show enhanced plate in new figure
+        figure('Name', 'Enhanced Plate');
+        imshow(plateBW);
+        title('Enhanced Plate Image');
+        
+        % Save the detected plate
+        imwrite(plateRegion, 'detected_plate.jpg');
+        imwrite(plateBW, 'enhanced_plate.jpg');
+        
+        fprintf('Plate images have been saved as "detected_plate.jpg" and "enhanced_plate.jpg"\n');
+    else
+        subplot(2,2,4);
+        text(0.1, 0.5, 'No plate detected', 'Color', 'red');
+        title('No Plate Found');
+    end
+    
+catch err
+    errordlg(['Error: ' err.message]);
+end
